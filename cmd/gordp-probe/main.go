@@ -36,6 +36,7 @@ func main() {
 	shot := flag.String("screenshot", "", "pump updates and save the desktop to this PNG")
 	testInput := flag.Bool("input", false, "after the screenshot, press the Windows key and save <png>.after.png")
 	pump := flag.Duration("pump", 5*time.Second, "how long to read updates before the screenshot")
+	record := flag.String("record", "", "record fast-path updates during the pump to this file (replay with gordp-replay)")
 	flag.Parse()
 
 	if *addr == "" || *user == "" {
@@ -56,6 +57,32 @@ func main() {
 	fmt.Printf("  mcs user channel:  %d\n", c.UserChannel())
 	fmt.Printf("  mcs i/o channel:   %d\n", c.IOChannel())
 	fmt.Printf("  session active:    %v\n", c.Active())
+
+	if *record != "" {
+		w, h := c.DesktopSize()
+		rec, err := gordp.NewRecorder(*record, w, h)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "record: %v\n", err)
+			os.Exit(1)
+		}
+		c.OnFastPath = rec.Record
+		defer func() {
+			if err := rec.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "close recording: %v\n", err)
+				return
+			}
+			fmt.Printf("  saved recording:   %s\n", *record)
+		}()
+		// With no screenshot to drive a pump, read updates for -pump so the
+		// recording captures something.
+		if *shot == "" {
+			n, err := c.PumpUpdates(*pump)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "pump: %v\n", err)
+			}
+			fmt.Printf("  rectangles:        %d\n", n)
+		}
+	}
 
 	if *shot != "" {
 		n, err := c.PumpUpdates(*pump)

@@ -33,7 +33,7 @@ tested against a default-configuration Windows Server 2022:
 - [ ] Bitmap decoding: RemoteFX, GFX / H.264
 - [x] Input: fast-path mouse (move, buttons, wheel) and keyboard (scancode, unicode)
 - [ ] Clipboard, display resize, drive redirection, RemoteApp
-- [ ] Session recording
+- [x] Session recording and replay (fast-path update capture, PNG reconstruction)
 
 A full 32bpp desktop frame decodes correctly against Windows Server 2022: run
 `gordp-probe` with `-screenshot out.png`.
