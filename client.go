@@ -29,6 +29,7 @@ import (
 
 	"github.com/casvisor/gordp/mcs"
 	"github.com/casvisor/gordp/nla"
+	"github.com/casvisor/gordp/pdu"
 	"github.com/casvisor/gordp/tpkt"
 	"github.com/casvisor/gordp/x224"
 )
@@ -138,9 +139,45 @@ func (c *Client) Connect() error {
 		return err
 	}
 
+	// Client Info PDU (login) on the I/O channel, then the licensing exchange.
+	info := pdu.BuildClientInfo(pdu.LoginInfo{
+		Domain:   c.creds.Domain,
+		Username: c.creds.Username,
+		Password: c.creds.Password,
+	})
+	if err := c.mcs.Send(c.mcs.Server.IOChannelID, info); err != nil {
+		tlsConn.Close()
+		return fmt.Errorf("gordp: send client info: %w", err)
+	}
+	if err := c.licensing(); err != nil {
+		tlsConn.Close()
+		return err
+	}
+
 	// Clear the handshake deadline; the session read loop manages its own.
 	_ = tlsConn.SetDeadline(time.Time{})
 	return nil
+}
+
+// licensing reads licensing PDUs until the server lets the session proceed.
+func (c *Client) licensing() error {
+	for i := 0; i < 8; i++ {
+		_, msg, err := c.mcs.Receive()
+		if err != nil {
+			return fmt.Errorf("gordp: read licensing: %w", err)
+		}
+		if msg.FastPath {
+			continue
+		}
+		done, err := pdu.ParseLicensing(msg.Payload)
+		if err != nil {
+			return err
+		}
+		if done {
+			return nil
+		}
+	}
+	return fmt.Errorf("gordp: licensing did not complete")
 }
 
 // UserChannel returns the MCS user channel assigned by the server, valid after
