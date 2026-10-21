@@ -25,7 +25,8 @@ tested against a default-configuration Windows Server 2022:
       public-key binding with client nonce, password delegation
 - [x] MCS connect (GCC conference create), erect domain, attach user, channel join
 - [x] Client info (login) PDU and licensing (valid-client / admin mode)
-- [ ] Capability exchange (demand/confirm active) and connection finalization
+- [x] Capability exchange (demand/confirm active) and connection finalization
+      (synchronize, control, font list/map) — the session reaches the active state
 - [ ] Bitmap decoding (interleaved RLE, planar, RemoteFX)
 - [ ] Input (keyboard, mouse)
 - [ ] Clipboard, display resize, drive redirection, RemoteApp

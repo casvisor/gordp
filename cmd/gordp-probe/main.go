@@ -45,9 +45,10 @@ func main() {
 	}
 	defer c.Close()
 
-	fmt.Printf("OK: NLA + MCS + login + licensing\n")
+	fmt.Printf("OK: session active (NLA + MCS + login + licensing + capabilities)\n")
 	fmt.Printf("  selected protocol: 0x%08x\n", c.SelectedProtocol())
 	fmt.Printf("  server cert sha256: %s\n", c.ServerCertFingerprint())
 	fmt.Printf("  mcs user channel:  %d\n", c.UserChannel())
 	fmt.Printf("  mcs i/o channel:   %d\n", c.IOChannel())
+	fmt.Printf("  session active:    %v\n", c.Active())
 }

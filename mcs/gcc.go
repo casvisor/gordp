@@ -136,6 +136,11 @@ type ServerData struct {
 	IOChannelID uint16
 	// ChannelIDs are the virtual channel IDs, in request order.
 	ChannelIDs []uint16
+	// EncryptionMethod and EncryptionLevel are from the server security data.
+	// When both are zero (the usual case over TLS/CredSSP), the share PDUs
+	// carry no basic security header.
+	EncryptionMethod uint32
+	EncryptionLevel  uint32
 }
 
 // parseConferenceCreateResponse walks the GCC CCResp header and returns the
@@ -209,8 +214,13 @@ func parseServerDataBlocks(r *core.Reader) (*ServerData, error) {
 		if err != nil {
 			return nil, err
 		}
-		if blockType == scNet {
+		switch blockType {
+		case scNet:
 			if err := parseServerNetworkData(body, sd); err != nil {
+				return nil, err
+			}
+		case scSecurity:
+			if err := parseServerSecurityData(body, sd); err != nil {
 				return nil, err
 			}
 		}
@@ -239,6 +249,21 @@ func parseServerNetworkData(body []byte, sd *ServerData) error {
 		}
 		sd.ChannelIDs = append(sd.ChannelIDs, id)
 	}
+	return nil
+}
+
+func parseServerSecurityData(body []byte, sd *ServerData) error {
+	r := core.NewReader(body)
+	method, err := r.ReadUint32LE()
+	if err != nil {
+		return err
+	}
+	level, err := r.ReadUint32LE()
+	if err != nil {
+		return err
+	}
+	sd.EncryptionMethod = method
+	sd.EncryptionLevel = level
 	return nil
 }
 

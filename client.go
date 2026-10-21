@@ -59,6 +59,7 @@ type Client struct {
 
 	width  uint16
 	height uint16
+	active bool
 
 	conn *tls.Conn
 	tpkt *tpkt.Layer
@@ -154,9 +155,129 @@ func (c *Client) Connect() error {
 		return err
 	}
 
+	// Capability exchange (demand/confirm active) and finalization.
+	if err := c.activate(); err != nil {
+		tlsConn.Close()
+		return err
+	}
+
 	// Clear the handshake deadline; the session read loop manages its own.
 	_ = tlsConn.SetDeadline(time.Time{})
 	return nil
+}
+
+// needSecHeader reports whether share PDUs carry a basic security header, which
+// they do only when the server negotiated RDP-level encryption (rare over TLS).
+func (c *Client) needSecHeader() bool {
+	s := c.mcs.Server
+	return s != nil && (s.EncryptionLevel != 0 || s.EncryptionMethod != 0)
+}
+
+func (c *Client) stripSecHeader(payload []byte) []byte {
+	if c.needSecHeader() && len(payload) >= 4 {
+		return payload[4:]
+	}
+	return payload
+}
+
+// sendIO sends a share PDU on the I/O channel, prepending a basic security
+// header when the server requires one.
+func (c *Client) sendIO(sharePDU []byte) error {
+	if c.needSecHeader() {
+		sharePDU = append([]byte{0, 0, 0, 0}, sharePDU...)
+	}
+	return c.mcs.Send(c.mcs.Server.IOChannelID, sharePDU)
+}
+
+// activate runs the capability exchange and connection finalization: it waits
+// for the server Demand Active, sends Confirm Active and the synchronize /
+// control / font-list sequence, and waits for the server Font Map that marks
+// the session active.
+func (c *Client) activate() error {
+	shareID, err := c.waitDemandActive()
+	if err != nil {
+		return err
+	}
+
+	width, height := c.width, c.height
+	if width == 0 {
+		width = 1024
+	}
+	if height == 0 {
+		height = 768
+	}
+	user := c.mcs.UserID
+
+	if err := c.sendIO(pdu.BuildConfirmActive(user, shareID, width, height)); err != nil {
+		return fmt.Errorf("gordp: send confirm active: %w", err)
+	}
+	for _, p := range [][]byte{
+		pdu.BuildSynchronize(user, shareID, c.mcs.Server.IOChannelID),
+		pdu.BuildControlCooperate(user, shareID),
+		pdu.BuildControlRequest(user, shareID),
+		pdu.BuildFontList(user, shareID),
+	} {
+		if err := c.sendIO(p); err != nil {
+			return fmt.Errorf("gordp: send finalization pdu: %w", err)
+		}
+	}
+
+	return c.waitFontMap()
+}
+
+func (c *Client) waitDemandActive() (uint32, error) {
+	for i := 0; i < 16; i++ {
+		_, msg, err := c.mcs.Receive()
+		if err != nil {
+			return 0, fmt.Errorf("gordp: read demand active: %w", err)
+		}
+		if msg.FastPath {
+			continue
+		}
+		sc, err := pdu.ReadShareControl(c.stripSecHeader(msg.Payload))
+		if err != nil {
+			return 0, err
+		}
+		switch sc.PduType {
+		case pdu.PdutypeDemandActive:
+			da, err := pdu.ParseDemandActive(sc.Body)
+			if err != nil {
+				return 0, err
+			}
+			return da.ShareID, nil
+		case pdu.PdutypeDeactivateAll:
+			continue
+		}
+	}
+	return 0, fmt.Errorf("gordp: did not receive demand active")
+}
+
+func (c *Client) waitFontMap() error {
+	for i := 0; i < 16; i++ {
+		_, msg, err := c.mcs.Receive()
+		if err != nil {
+			return fmt.Errorf("gordp: read font map: %w", err)
+		}
+		if msg.FastPath {
+			continue
+		}
+		sc, err := pdu.ReadShareControl(c.stripSecHeader(msg.Payload))
+		if err != nil {
+			return err
+		}
+		if sc.PduType != pdu.PdutypeData {
+			continue
+		}
+		sd, err := pdu.ReadShareData(sc.Body)
+		if err != nil {
+			return err
+		}
+		if sd.PduType2 == pdu.Pdutype2FontMap {
+			c.active = true
+			return nil
+		}
+	}
+	return fmt.Errorf("gordp: did not receive font map")
 }
 
 // licensing reads licensing PDUs until the server lets the session proceed.
@@ -178,6 +299,12 @@ func (c *Client) licensing() error {
 		}
 	}
 	return fmt.Errorf("gordp: licensing did not complete")
+}
+
+// Active reports whether the capability exchange and finalization completed, so
+// the session is ready to receive graphics updates.
+func (c *Client) Active() bool {
+	return c.active
 }
 
 // UserChannel returns the MCS user channel assigned by the server, valid after
