@@ -80,9 +80,9 @@ func writeClientCoreData(w *core.Writer, cfg ClientConfig) {
 	w.WriteUint16LE(0xCA01)   // postBeta2ColorDepth
 	w.WriteUint16LE(0x1)      // clientProductId
 	w.WriteUint32LE(0x0)      // serialNumber
-	w.WriteUint16LE(0x0018)   // highColorDepth: 24bpp
-	w.WriteUint16LE(0x0007)   // supportedColorDepths
-	w.WriteUint16LE(0x0001)   // earlyCapabilityFlags: RNS_UD_CS_SUPPORT_ERRINFO_PDU
+	w.WriteUint16LE(0x0018)   // highColorDepth: 24bpp (32bpp is requested via the flags below)
+	w.WriteUint16LE(0x001E)   // supportedColorDepths: 15/16/24/32 (0x02|0x04|0x08|0x10)
+	w.WriteUint16LE(0x0003)   // earlyCapabilityFlags: SUPPORT_ERRINFO_PDU | WANT_32BPP_SESSION
 	w.Write(make([]byte, 64)) // clientDigProductId
 	w.PutByte(0x0)            // connectionType
 	w.PutByte(0x0)            // pad1octet

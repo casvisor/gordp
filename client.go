@@ -68,6 +68,7 @@ type Client struct {
 	mcs     *mcs.Layer
 	fpReasm pdu.FastPathReassembler
 	fb      *image.RGBA
+	lastBpp int
 }
 
 // WithDesktopSize sets the desktop resolution requested from the server.

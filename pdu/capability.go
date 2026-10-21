@@ -139,7 +139,7 @@ func generalCap() []byte {
 
 func bitmapCap(width, height uint16) []byte {
 	w := core.NewWriter()
-	w.WriteUint16LE(16) // preferredBitsPerPixel
+	w.WriteUint16LE(32) // preferredBitsPerPixel
 	w.WriteUint16LE(1)  // receive1BitPerPixel
 	w.WriteUint16LE(1)  // receive4BitsPerPixel
 	w.WriteUint16LE(1)  // receive8BitsPerPixel

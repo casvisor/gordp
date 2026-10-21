@@ -28,13 +28,14 @@ tested against a default-configuration Windows Server 2022:
 - [x] Capability exchange (demand/confirm active) and connection finalization
       (synchronize, control, font list/map) — the session reaches the active state
 - [x] Fast-path (and slow-path) bitmap update reception, framebuffer compositing
-- [x] Bitmap decoding: uncompressed and interleaved RLE (15/16bpp)
-- [ ] Bitmap decoding: 24/32bpp, planar, RemoteFX
+- [x] Bitmap decoding: interleaved RLE (15/16bpp) and the RDP 6.0 planar codec
+      (24/32bpp true colour), plus uncompressed
+- [ ] Bitmap decoding: RemoteFX, GFX / H.264
 - [x] Input: fast-path mouse (move, buttons, wheel) and keyboard (scancode, unicode)
 - [ ] Clipboard, display resize, drive redirection, RemoteApp
 - [ ] Session recording
 
-A full desktop frame decodes correctly against Windows Server 2022: run
+A full 32bpp desktop frame decodes correctly against Windows Server 2022: run
 `gordp-probe` with `-screenshot out.png`.
 
 The graphics path is planned to hand fast-path updates to the browser for

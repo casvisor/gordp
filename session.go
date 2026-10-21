@@ -121,9 +121,16 @@ func (c *Client) applyBitmapUpdate(data []byte) (int, error) {
 		return 0, err
 	}
 	for _, rect := range rects {
+		c.lastBpp = rect.Bpp
 		c.blit(rect)
 	}
 	return len(rects), nil
+}
+
+// LastBpp returns the bits-per-pixel of the most recent bitmap rectangle, which
+// reports the color depth the server actually chose.
+func (c *Client) LastBpp() int {
+	return c.lastBpp
 }
 
 func (c *Client) blit(rect bitmap.Rect) {

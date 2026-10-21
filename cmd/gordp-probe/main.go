@@ -63,6 +63,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "pump: %v\n", err)
 		}
 		fmt.Printf("  rectangles:        %d\n", n)
+		fmt.Printf("  color depth:       %d bpp\n", c.LastBpp())
 		f, err := os.Create(*shot)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "create png: %v\n", err)

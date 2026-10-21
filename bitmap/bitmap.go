@@ -36,6 +36,7 @@ type Rect struct {
 	DestTop  int
 	Width    int
 	Height   int
+	Bpp      int
 	RGBA     []byte
 }
 
@@ -105,13 +106,23 @@ func parseRectangle(r *core.Reader) (Rect, error) {
 	_ = destBottom
 	w, h := int(width), int(height)
 
-	var pixels []uint16
+	var rgba []byte
 	switch bpp {
 	case 15, 16:
+		var pixels []uint16
 		if compressed {
 			pixels, err = decompressInterleaved16(payload, w, h)
 		} else {
 			pixels, err = rawPixels16(payload, w, h)
+		}
+		if err == nil {
+			rgba = pixels16ToRGBA(pixels, w, h, bpp == 15)
+		}
+	case 24, 32:
+		if compressed {
+			rgba, err = decodePlanar32(payload, w, h)
+		} else {
+			rgba, err = rawPixels32(payload, w, h)
 		}
 	default:
 		return Rect{}, fmt.Errorf("bitmap: %d bpp not supported yet", bpp)
@@ -125,8 +136,29 @@ func parseRectangle(r *core.Reader) (Rect, error) {
 		DestTop:  int(destTop),
 		Width:    w,
 		Height:   h,
-		RGBA:     pixels16ToRGBA(pixels, w, h, bpp == 15),
+		Bpp:      int(bpp),
+		RGBA:     rgba,
 	}, nil
+}
+
+// rawPixels32 reads an uncompressed 32bpp bitmap (BGRX/BGRA, bottom-up).
+func rawPixels32(data []byte, w, h int) ([]byte, error) {
+	if len(data) < w*h*4 {
+		return nil, fmt.Errorf("bitmap: raw 32bpp data %d bytes, want %d", len(data), w*h*4)
+	}
+	out := make([]byte, w*h*4)
+	for y := 0; y < h; y++ {
+		srcRow := (h - 1 - y) * w * 4
+		for x := 0; x < w; x++ {
+			off := srcRow + x*4
+			dst := (y*w + x) * 4
+			out[dst] = data[off+2]   // R
+			out[dst+1] = data[off+1] // G
+			out[dst+2] = data[off]   // B
+			out[dst+3] = 0xFF
+		}
+	}
+	return out, nil
 }
 
 // rawPixels16 reads an uncompressed 16bpp bitmap (stored bottom-up).
