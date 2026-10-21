@@ -28,6 +28,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/casvisor/gordp/bitmap"
 	"github.com/casvisor/gordp/mcs"
 	"github.com/casvisor/gordp/nla"
 	"github.com/casvisor/gordp/pdu"
@@ -69,6 +70,14 @@ type Client struct {
 	fpReasm pdu.FastPathReassembler
 	fb      *image.RGBA
 	lastBpp int
+
+	// OnBitmap, if set, is called with the decoded rectangles of each bitmap
+	// update after they are composited, for streaming changed regions to a
+	// viewer.
+	OnBitmap func(rects []bitmap.Rect)
+	// OnFastPath, if set, is called with the code and raw data of every
+	// reassembled fast-path update, for session recording.
+	OnFastPath func(code byte, data []byte)
 }
 
 // WithDesktopSize sets the desktop resolution requested from the server.

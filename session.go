@@ -69,6 +69,9 @@ func (c *Client) PumpUpdates(d time.Duration) (int, error) {
 				return rects, err
 			}
 			for _, u := range updates {
+				if c.OnFastPath != nil {
+					c.OnFastPath(u.Code, u.Data)
+				}
 				if u.Code == pdu.FastPathUpdateBitmap {
 					n, err := c.applyBitmapUpdate(u.Data)
 					if err != nil {
@@ -124,6 +127,9 @@ func (c *Client) applyBitmapUpdate(data []byte) (int, error) {
 		c.lastBpp = rect.Bpp
 		c.blit(rect)
 	}
+	if c.OnBitmap != nil && len(rects) > 0 {
+		c.OnBitmap(rects)
+	}
 	return len(rects), nil
 }
 
@@ -131,6 +137,18 @@ func (c *Client) applyBitmapUpdate(data []byte) (int, error) {
 // reports the color depth the server actually chose.
 func (c *Client) LastBpp() int {
 	return c.lastBpp
+}
+
+// DesktopSize returns the negotiated desktop size.
+func (c *Client) DesktopSize() (width, height int) {
+	w, h := int(c.width), int(c.height)
+	if w == 0 {
+		w = 1024
+	}
+	if h == 0 {
+		h = 768
+	}
+	return w, h
 }
 
 func (c *Client) blit(rect bitmap.Rect) {
