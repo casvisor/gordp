@@ -24,6 +24,7 @@ package gordp
 import (
 	"crypto/tls"
 	"fmt"
+	"image"
 	"net"
 	"time"
 
@@ -61,10 +62,12 @@ type Client struct {
 	height uint16
 	active bool
 
-	conn *tls.Conn
-	tpkt *tpkt.Layer
-	x224 *x224.Layer
-	mcs  *mcs.Layer
+	conn    *tls.Conn
+	tpkt    *tpkt.Layer
+	x224    *x224.Layer
+	mcs     *mcs.Layer
+	fpReasm pdu.FastPathReassembler
+	fb      *image.RGBA
 }
 
 // WithDesktopSize sets the desktop resolution requested from the server.

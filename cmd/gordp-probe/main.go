@@ -21,7 +21,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"image/png"
 	"os"
+	"time"
 
 	gordp "github.com/casvisor/gordp"
 )
@@ -31,6 +33,7 @@ func main() {
 	domain := flag.String("domain", "", "domain (optional)")
 	user := flag.String("user", "", "username")
 	pass := flag.String("pass", "", "password")
+	shot := flag.String("screenshot", "", "pump updates and save the desktop to this PNG")
 	flag.Parse()
 
 	if *addr == "" || *user == "" {
@@ -51,4 +54,23 @@ func main() {
 	fmt.Printf("  mcs user channel:  %d\n", c.UserChannel())
 	fmt.Printf("  mcs i/o channel:   %d\n", c.IOChannel())
 	fmt.Printf("  session active:    %v\n", c.Active())
+
+	if *shot != "" {
+		n, err := c.PumpUpdates(5 * time.Second)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "pump: %v\n", err)
+		}
+		fmt.Printf("  rectangles:        %d\n", n)
+		f, err := os.Create(*shot)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "create png: %v\n", err)
+			os.Exit(1)
+		}
+		defer f.Close()
+		if err := png.Encode(f, c.Framebuffer()); err != nil {
+			fmt.Fprintf(os.Stderr, "encode png: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Printf("  saved screenshot:  %s\n", *shot)
+	}
 }
