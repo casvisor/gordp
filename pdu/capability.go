@@ -187,7 +187,7 @@ func pointerCap() []byte {
 
 func inputCap() []byte {
 	w := core.NewWriter()
-	w.WriteUint16LE(0x0035)   // inputFlags: SCANCODES | MOUSEX | UNICODE | FASTPATH_INPUT2
+	w.WriteUint16LE(0x003D)   // inputFlags: SCANCODES | MOUSEX | FASTPATH_INPUT | UNICODE | FASTPATH_INPUT2
 	w.WriteUint16LE(0)        // pad2octetsA
 	w.WriteUint32LE(0x409)    // keyboardLayout: US
 	w.WriteUint32LE(4)        // keyboardType

@@ -34,6 +34,8 @@ func main() {
 	user := flag.String("user", "", "username")
 	pass := flag.String("pass", "", "password")
 	shot := flag.String("screenshot", "", "pump updates and save the desktop to this PNG")
+	testInput := flag.Bool("input", false, "after the screenshot, press the Windows key and save <png>.after.png")
+	pump := flag.Duration("pump", 5*time.Second, "how long to read updates before the screenshot")
 	flag.Parse()
 
 	if *addr == "" || *user == "" {
@@ -56,7 +58,7 @@ func main() {
 	fmt.Printf("  session active:    %v\n", c.Active())
 
 	if *shot != "" {
-		n, err := c.PumpUpdates(5 * time.Second)
+		n, err := c.PumpUpdates(*pump)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "pump: %v\n", err)
 		}
@@ -72,5 +74,34 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("  saved screenshot:  %s\n", *shot)
+
+		if *testInput {
+			// Click the Start button at the bottom-left to open the Start menu,
+			// then type into its search box to exercise the keyboard.
+			if err := c.Click(200, 748); err != nil {
+				fmt.Fprintf(os.Stderr, "click: %v\n", err)
+				os.Exit(1)
+			}
+			c.PumpUpdates(2 * time.Second)
+			if err := c.TypeUnicode("notepad"); err != nil {
+				fmt.Fprintf(os.Stderr, "type: %v\n", err)
+				os.Exit(1)
+			}
+			if _, err := c.PumpUpdates(3 * time.Second); err != nil {
+				fmt.Fprintf(os.Stderr, "pump after input: %v\n", err)
+			}
+			after := *shot + ".after.png"
+			af, err := os.Create(after)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "create png: %v\n", err)
+				os.Exit(1)
+			}
+			defer af.Close()
+			if err := png.Encode(af, c.Framebuffer()); err != nil {
+				fmt.Fprintf(os.Stderr, "encode png: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("  saved after-input: %s\n", after)
+		}
 	}
 }

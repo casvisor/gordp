@@ -30,7 +30,7 @@ tested against a default-configuration Windows Server 2022:
 - [x] Fast-path (and slow-path) bitmap update reception, framebuffer compositing
 - [x] Bitmap decoding: uncompressed and interleaved RLE (15/16bpp)
 - [ ] Bitmap decoding: 24/32bpp, planar, RemoteFX
-- [ ] Input (keyboard, mouse)
+- [x] Input: fast-path mouse (move, buttons, wheel) and keyboard (scancode, unicode)
 - [ ] Clipboard, display resize, drive redirection, RemoteApp
 - [ ] Session recording
 
