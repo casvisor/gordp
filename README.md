@@ -23,7 +23,8 @@ tested against a default-configuration Windows Server 2022:
 - [x] TLS transport with optional certificate pinning
 - [x] CredSSP / NLA: NTLMv2 via [go-msrpc](https://github.com/oiweiwei/go-msrpc),
       public-key binding with client nonce, password delegation
-- [ ] MCS connect, channel join
+- [x] MCS connect (GCC conference create), erect domain, attach user, channel join
+- [ ] Client info (login) and licensing
 - [ ] Capability exchange and connection finalization
 - [ ] Bitmap decoding (interleaved RLE, planar, RemoteFX)
 - [ ] Input (keyboard, mouse)

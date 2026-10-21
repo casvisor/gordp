@@ -27,6 +27,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/casvisor/gordp/mcs"
 	"github.com/casvisor/gordp/nla"
 	"github.com/casvisor/gordp/tpkt"
 	"github.com/casvisor/gordp/x224"
@@ -55,9 +56,21 @@ type Client struct {
 	timeout         time.Duration
 	certFingerprint string
 
+	width  uint16
+	height uint16
+
 	conn *tls.Conn
 	tpkt *tpkt.Layer
 	x224 *x224.Layer
+	mcs  *mcs.Layer
+}
+
+// WithDesktopSize sets the desktop resolution requested from the server.
+func WithDesktopSize(width, height uint16) Option {
+	return func(c *Client) {
+		c.width = width
+		c.height = height
+	}
 }
 
 // NewClient creates a client for addr ("host:port"). Domain may be empty.
@@ -114,9 +127,37 @@ func (c *Client) Connect() error {
 		}
 	}
 
+	// MCS: GCC conference create, erect domain, attach user, join channels.
+	c.mcs = mcs.New(c.x224)
+	if err := c.mcs.Connect(mcs.ClientConfig{
+		DesktopWidth:     c.width,
+		DesktopHeight:    c.height,
+		SelectedProtocol: c.x224.SelectedProtocol,
+	}); err != nil {
+		tlsConn.Close()
+		return err
+	}
+
 	// Clear the handshake deadline; the session read loop manages its own.
 	_ = tlsConn.SetDeadline(time.Time{})
 	return nil
+}
+
+// UserChannel returns the MCS user channel assigned by the server, valid after
+// Connect.
+func (c *Client) UserChannel() uint16 {
+	if c.mcs == nil {
+		return 0
+	}
+	return c.mcs.UserID
+}
+
+// IOChannel returns the MCS I/O channel, valid after Connect.
+func (c *Client) IOChannel() uint16 {
+	if c.mcs == nil || c.mcs.Server == nil {
+		return 0
+	}
+	return c.mcs.Server.IOChannelID
 }
 
 // Close closes the connection.

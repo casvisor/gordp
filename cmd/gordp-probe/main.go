@@ -45,7 +45,9 @@ func main() {
 	}
 	defer c.Close()
 
-	fmt.Printf("OK: connected and authenticated\n")
+	fmt.Printf("OK: NLA + MCS connected\n")
 	fmt.Printf("  selected protocol: 0x%08x\n", c.SelectedProtocol())
 	fmt.Printf("  server cert sha256: %s\n", c.ServerCertFingerprint())
+	fmt.Printf("  mcs user channel:  %d\n", c.UserChannel())
+	fmt.Printf("  mcs i/o channel:   %d\n", c.IOChannel())
 }
