@@ -83,13 +83,6 @@ type Credentials struct {
 	Password string
 }
 
-// transport is the minimal read/write the CredSSP exchange needs. In the full
-// client this is the TLS connection.
-type transport interface {
-	Write(p []byte) (int, error)
-	Read(p []byte) (int, error)
-}
-
 // Authenticate runs the full CredSSP exchange over conn, which must already be
 // a completed TLS handshake with the RDP server.
 func Authenticate(conn *tls.Conn, creds Credentials) error {

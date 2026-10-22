@@ -50,7 +50,7 @@ func (c *Client) PumpUpdates(d time.Duration) (int, error) {
 	}
 	deadline := time.Now().Add(d)
 	_ = c.conn.SetReadDeadline(deadline)
-	defer c.conn.SetReadDeadline(time.Time{})
+	defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
 
 	rects := 0
 	for time.Now().Before(deadline) {

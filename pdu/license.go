@@ -37,9 +37,6 @@ const (
 	errInvalidClient   = 0x00000008
 )
 
-// State transitions (MS-RDPELE 2.2.2.4).
-const stNoTransition = 0x00000002
-
 // ParseLicensing reads a licensing PDU. It returns done=true when the server
 // says the session may proceed (the common "valid client" case for admin
 // connections). A real licensing negotiation (the server asks for a license)

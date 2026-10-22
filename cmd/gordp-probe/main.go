@@ -49,7 +49,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
 		os.Exit(1)
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 
 	fmt.Printf("OK: session active (NLA + MCS + login + licensing + capabilities)\n")
 	fmt.Printf("  selected protocol: 0x%08x\n", c.SelectedProtocol())
@@ -110,7 +110,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "click: %v\n", err)
 				os.Exit(1)
 			}
-			c.PumpUpdates(2 * time.Second)
+			_, _ = c.PumpUpdates(2 * time.Second)
 			if err := c.TypeUnicode("notepad"); err != nil {
 				fmt.Fprintf(os.Stderr, "type: %v\n", err)
 				os.Exit(1)
@@ -124,7 +124,7 @@ func main() {
 				fmt.Fprintf(os.Stderr, "create png: %v\n", err)
 				os.Exit(1)
 			}
-			defer af.Close()
+			defer func() { _ = af.Close() }()
 			if err := png.Encode(af, c.Framebuffer()); err != nil {
 				fmt.Fprintf(os.Stderr, "encode png: %v\n", err)
 				os.Exit(1)

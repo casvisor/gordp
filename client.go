@@ -116,7 +116,7 @@ func (c *Client) Connect() error {
 
 	// Offer CredSSP (and plain TLS as a fallback the server may downgrade to).
 	if err := c.x224.Connect(x224.ProtocolHybrid | x224.ProtocolSSL); err != nil {
-		tcp.Close()
+		_ = tcp.Close()
 		return err
 	}
 
@@ -125,11 +125,11 @@ func (c *Client) Connect() error {
 		MinVersion:         tls.VersionTLS12,
 	})
 	if err := tlsConn.Handshake(); err != nil {
-		tcp.Close()
+		_ = tcp.Close()
 		return fmt.Errorf("gordp: tls handshake: %w", err)
 	}
 	if err := c.verifyCert(tlsConn); err != nil {
-		tlsConn.Close()
+		_ = tlsConn.Close()
 		return err
 	}
 	c.conn = tlsConn
@@ -137,7 +137,7 @@ func (c *Client) Connect() error {
 
 	if c.x224.SelectedProtocol&x224.ProtocolHybrid != 0 {
 		if err := nla.Authenticate(tlsConn, c.creds); err != nil {
-			tlsConn.Close()
+			_ = tlsConn.Close()
 			return err
 		}
 	}
@@ -149,7 +149,7 @@ func (c *Client) Connect() error {
 		DesktopHeight:    c.height,
 		SelectedProtocol: c.x224.SelectedProtocol,
 	}); err != nil {
-		tlsConn.Close()
+		_ = tlsConn.Close()
 		return err
 	}
 
@@ -160,17 +160,17 @@ func (c *Client) Connect() error {
 		Password: c.creds.Password,
 	})
 	if err := c.mcs.Send(c.mcs.Server.IOChannelID, info); err != nil {
-		tlsConn.Close()
+		_ = tlsConn.Close()
 		return fmt.Errorf("gordp: send client info: %w", err)
 	}
 	if err := c.licensing(); err != nil {
-		tlsConn.Close()
+		_ = tlsConn.Close()
 		return err
 	}
 
 	// Capability exchange (demand/confirm active) and finalization.
 	if err := c.activate(); err != nil {
-		tlsConn.Close()
+		_ = tlsConn.Close()
 		return err
 	}
 

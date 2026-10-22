@@ -83,7 +83,7 @@ func NewRecorder(path string, width, height int) (*Recorder, error) {
 	binary.LittleEndian.PutUint16(hdr[12:14], uint16(height))
 	binary.LittleEndian.PutUint64(hdr[14:22], uint64(start.UnixNano()))
 	if _, err := w.Write(hdr[:]); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("gordp: write recording header: %w", err)
 	}
 
@@ -166,11 +166,11 @@ func OpenRecording(path string) (*RecordReader, error) {
 
 	var hdr [8 + 2 + 2 + 2 + 8]byte
 	if _, err := io.ReadFull(br, hdr[:]); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("gordp: read recording header: %w", err)
 	}
 	if string(hdr[0:8]) != recordMagic {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("gordp: %s is not a gordp recording", path)
 	}
 	rr := &RecordReader{

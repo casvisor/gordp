@@ -55,7 +55,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
 		os.Exit(1)
 	}
-	defer rr.Close()
+	defer func() { _ = rr.Close() }()
 
 	w, h := rr.Header.Width, rr.Header.Height
 	if w == 0 {

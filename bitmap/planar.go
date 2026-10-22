@@ -120,10 +120,11 @@ func decodePlanarRLEPlane(src []byte, w, h int) ([]byte, int, error) {
 			s++
 			runLength := int(control & 0x0F)
 			rawBytes := int((control >> 4) & 0x0F)
-			if runLength == 1 {
+			switch runLength {
+			case 1:
 				runLength = rawBytes + 16
 				rawBytes = 0
-			} else if runLength == 2 {
+			case 2:
 				runLength = rawBytes + 32
 				rawBytes = 0
 			}
