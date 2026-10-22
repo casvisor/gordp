@@ -86,14 +86,13 @@ func newPDU(packetID uint16) *builder {
 	return p
 }
 
-func (p *builder) u8(v byte)       { p.b = append(p.b, v) }
-func (p *builder) u16(v uint16)    { p.b = binary.LittleEndian.AppendUint16(p.b, v) }
-func (p *builder) u32(v uint32)    { p.b = binary.LittleEndian.AppendUint32(p.b, v) }
-func (p *builder) u64(v uint64)    { p.b = binary.LittleEndian.AppendUint64(p.b, v) }
-func (p *builder) raw(v []byte)    { p.b = append(p.b, v...) }
-func (p *builder) zero(n int)      { p.b = append(p.b, make([]byte, n)...) }
-func (p *builder) bytes() []byte   { return p.b }
-func (p *builder) utf16z(s string) { p.raw(encodeUTF16(s, true)) }
+func (p *builder) u8(v byte)     { p.b = append(p.b, v) }
+func (p *builder) u16(v uint16)  { p.b = binary.LittleEndian.AppendUint16(p.b, v) }
+func (p *builder) u32(v uint32)  { p.b = binary.LittleEndian.AppendUint32(p.b, v) }
+func (p *builder) u64(v uint64)  { p.b = binary.LittleEndian.AppendUint64(p.b, v) }
+func (p *builder) raw(v []byte)  { p.b = append(p.b, v...) }
+func (p *builder) zero(n int)    { p.b = append(p.b, make([]byte, n)...) }
+func (p *builder) bytes() []byte { return p.b }
 
 // ServerAnnounce is the server's opening PDU.
 type ServerAnnounce struct {
