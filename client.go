@@ -195,6 +195,8 @@ func (c *Client) Connect() error {
 	tlsConn := tls.Client(tcp, &tls.Config{
 		InsecureSkipVerify: true, // RDP hosts use self-signed certs; pinning is checked below.
 		MinVersion:         tls.VersionTLS12,
+		// Windows 11 aborts CredSSP over TLS 1.3 with an internal_error alert.
+		MaxVersion: tls.VersionTLS12,
 	})
 	if err := tlsConn.Handshake(); err != nil {
 		_ = tcp.Close()
