@@ -39,6 +39,8 @@ func main() {
 	record := flag.String("record", "", "record fast-path updates during the pump to this file (replay with gordp-replay)")
 	resize := flag.String("resize", "", "request a desktop resize to WxH (e.g. 1600x900) and verify")
 	clip := flag.Bool("clip", false, "run a clipboard round-trip self-test (read remote clipboard, write to it)")
+	size := flag.String("size", "", "initial desktop size WxH (default 1024x768)")
+	scale := flag.Int("scale", 0, "desktop scale factor in percent (100 to 500)")
 	flag.Parse()
 
 	if *addr == "" || *user == "" {
@@ -46,7 +48,26 @@ func main() {
 		os.Exit(2)
 	}
 
-	c := gordp.NewClient(*addr, *domain, *user, *pass)
+	var opts []gordp.Option
+	if *size != "" {
+		var w, h int
+		if _, err := fmt.Sscanf(*size, "%dx%d", &w, &h); err != nil {
+			fmt.Fprintf(os.Stderr, "bad -size %q: %v\n", *size, err)
+			os.Exit(2)
+		}
+		opts = append(opts, gordp.WithDesktopSize(uint16(w), uint16(h)))
+	}
+	if *scale != 0 {
+		opts = append(opts, gordp.WithScaleFactor(*scale))
+	}
+	pointers := 0
+	c := gordp.NewClient(*addr, *domain, *user, *pass, opts...)
+	c.OnPointer = func(p *gordp.Pointer) {
+		pointers++
+		if pointers <= 5 {
+			fmt.Printf("  pointer: hidden=%v default=%v %dx%d hot=(%d,%d)\n", p.Hidden, p.Default, p.Width, p.Height, p.HotX, p.HotY)
+		}
+	}
 	if err := c.Connect(); err != nil {
 		fmt.Fprintf(os.Stderr, "FAIL: %v\n", err)
 		os.Exit(1)

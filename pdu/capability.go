@@ -37,6 +37,7 @@ const (
 	capOffscreenCache = 0x0011
 	capVirtualChannel = 0x0014
 	capMultiFragment  = 0x001A
+	capLargePointer   = 0x001B
 )
 
 // DemandActive is the part of the Server Demand Active PDU the client needs.
@@ -117,7 +118,14 @@ func buildCapabilitySets(width, height uint16) *capBuffer {
 	c.add(capFont, fontCap())
 	c.add(capColorCache, colorCacheCap())
 	c.add(capShare, make([]byte, 4))
-	c.add(capMultiFragment, u32le(0))
+	// MaxRequestSize: the largest update the server may send in fragments. The
+	// large pointer capability needs at least 608299 (a 384x384 cursor), as in
+	// FreeRDP.
+	c.add(capMultiFragment, u32le(608299))
+	// LARGE_POINTER_FLAG_96x96 | LARGE_POINTER_FLAG_384x384: without it
+	// Windows only sends 32x32 cursors, so on a scaled desktop every cursor
+	// falls back to the default arrow.
+	c.add(capLargePointer, []byte{0x03, 0x00})
 	return c
 }
 

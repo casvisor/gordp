@@ -22,17 +22,18 @@ import (
 
 // Fast-path update codes (MS-RDPBCGR 2.2.9.1.2.1).
 const (
-	FastPathUpdateOrders      = 0x0
-	FastPathUpdateBitmap      = 0x1
-	FastPathUpdatePalette     = 0x2
-	FastPathUpdateSynchronize = 0x3
-	FastPathUpdateSurfCmds    = 0x4
-	FastPathUpdatePointerNull = 0x5
-	FastPathUpdatePointerDef  = 0x6
-	FastPathUpdatePointerPos  = 0x8
-	FastPathUpdateColor       = 0x9
-	FastPathUpdateCached      = 0xA
-	FastPathUpdatePointer     = 0xB
+	FastPathUpdateOrders       = 0x0
+	FastPathUpdateBitmap       = 0x1
+	FastPathUpdatePalette      = 0x2
+	FastPathUpdateSynchronize  = 0x3
+	FastPathUpdateSurfCmds     = 0x4
+	FastPathUpdatePointerNull  = 0x5
+	FastPathUpdatePointerDef   = 0x6
+	FastPathUpdatePointerPos   = 0x8
+	FastPathUpdateColor        = 0x9
+	FastPathUpdateCached       = 0xA
+	FastPathUpdatePointer      = 0xB
+	FastPathUpdateLargePointer = 0xC
 )
 
 // Fragmentation (MS-RDPBCGR 2.2.9.1.2.1).

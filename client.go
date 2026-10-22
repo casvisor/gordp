@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"image"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/casvisor/gordp/bitmap"
@@ -62,6 +63,7 @@ type Client struct {
 
 	width   uint16
 	height  uint16
+	scale   uint32
 	active  bool
 	shareID uint32
 
@@ -80,6 +82,11 @@ type Client struct {
 	fb      *image.RGBA
 	lastBpp int
 
+	recv      chan received
+	done      chan struct{}
+	closeOnce sync.Once
+	pointers  map[int]*Pointer
+
 	// OnBitmap, if set, is called with the decoded rectangles of each bitmap
 	// update after they are composited, for streaming changed regions to a
 	// viewer.
@@ -90,6 +97,9 @@ type Client struct {
 	// OnClipboard, if set, is called with text copied to the remote host's
 	// clipboard, for syncing it to the local or browser clipboard.
 	OnClipboard func(text string)
+	// OnPointer, if set, is called when the remote session changes the mouse
+	// cursor shape.
+	OnPointer func(p *Pointer)
 	// OnDriveEvent, if set, is called for every auditable file operation the
 	// remote session performs on a redirected drive.
 	OnDriveEvent func(drive string, ev rdpdr.Event)
@@ -103,6 +113,18 @@ func WithDesktopSize(width, height uint16) Option {
 	return func(c *Client) {
 		c.width = width
 		c.height = height
+	}
+}
+
+// WithScaleFactor asks the server to scale the desktop by percent (100 to 500),
+// the way the Windows client follows the local display scaling. A viewer on a
+// high-DPI screen requests its physical pixel size and its scale factor, so the
+// remote desktop is sharp and its text is the usual size.
+func WithScaleFactor(percent int) Option {
+	return func(c *Client) {
+		if percent >= 100 && percent <= 500 {
+			c.scale = uint32(percent)
+		}
 	}
 }
 
@@ -179,6 +201,7 @@ func (c *Client) Connect() error {
 	if err := c.mcs.Connect(mcs.ClientConfig{
 		DesktopWidth:     c.width,
 		DesktopHeight:    c.height,
+		ScaleFactor:      c.scale,
 		SelectedProtocol: c.x224.SelectedProtocol,
 		Channels:         c.vc.requested,
 	}); err != nil {
@@ -208,8 +231,10 @@ func (c *Client) Connect() error {
 		return err
 	}
 
-	// Clear the handshake deadline; the session read loop manages its own.
+	// Clear the handshake deadline; from here on PDUs are read in the
+	// background and the pump waits on them.
 	_ = tlsConn.SetDeadline(time.Time{})
+	c.startReader()
 	return nil
 }
 
@@ -417,6 +442,11 @@ func (c *Client) IOChannel() uint16 {
 
 // Close closes the connection.
 func (c *Client) Close() error {
+	c.closeOnce.Do(func() {
+		if c.done != nil {
+			close(c.done)
+		}
+	})
 	c.closeDrives()
 	if c.conn != nil {
 		return c.conn.Close()

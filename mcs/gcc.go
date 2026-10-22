@@ -52,6 +52,11 @@ type ClientConfig struct {
 	DesktopHeight    uint16
 	SelectedProtocol uint32
 	Name             string
+	// ScaleFactor is the desktop scale in percent (100 to 500); 0 means 100.
+	ScaleFactor uint32
+	// GFX advertises the graphics pipeline (MS-RDPEGFX), so the server opens
+	// the Microsoft::Windows::RDS::Graphics dynamic channel.
+	GFX bool
 	// Channels are the static virtual channels to request, in order. The server
 	// assigns an ID to each and returns them, in the same order, in
 	// ServerData.ChannelIDs.
@@ -74,7 +79,7 @@ func writeUserDataHeader(w *core.Writer, blockType uint16, length uint16) {
 }
 
 func writeClientCoreData(w *core.Writer, cfg ClientConfig) {
-	const length = 216
+	const length = 234
 	writeUserDataHeader(w, csCore, length)
 	w.WriteUint32LE(0x00080004) // version: RDP 5.0+
 	w.WriteUint16LE(cfg.DesktopWidth)
@@ -93,11 +98,49 @@ func writeClientCoreData(w *core.Writer, cfg ClientConfig) {
 	w.WriteUint32LE(0x0)      // serialNumber
 	w.WriteUint16LE(0x0018)   // highColorDepth: 24bpp (32bpp is requested via the flags below)
 	w.WriteUint16LE(0x001E)   // supportedColorDepths: 15/16/24/32 (0x02|0x04|0x08|0x10)
-	w.WriteUint16LE(0x0003)   // earlyCapabilityFlags: SUPPORT_ERRINFO_PDU | WANT_32BPP_SESSION
+	// earlyCapabilityFlags: SUPPORT_ERRINFO_PDU | WANT_32BPP_SESSION |
+	// VALID_CONNECTION_TYPE, plus SUPPORT_DYNVC_GFX_PROTOCOL for GFX.
+	early := uint16(0x0023)
+	if cfg.GFX {
+		early |= 0x0100
+	}
+	w.WriteUint16LE(early)
 	w.Write(make([]byte, 64)) // clientDigProductId
-	w.PutByte(0x0)            // connectionType
+	w.PutByte(0x06)           // connectionType: LAN, so the server favors quality
 	w.PutByte(0x0)            // pad1octet
 	w.WriteUint32LE(cfg.SelectedProtocol)
+
+	// The physical size and scale factors let the server scale the desktop
+	// the way the local display is scaled.
+	scale := cfg.ScaleFactor
+	if scale < 100 || scale > 500 {
+		scale = 100
+	}
+	w.WriteUint32LE(physicalMillimeters(cfg.DesktopWidth, scale))  // desktopPhysicalWidth
+	w.WriteUint32LE(physicalMillimeters(cfg.DesktopHeight, scale)) // desktopPhysicalHeight
+	w.WriteUint16LE(0)                                             // desktopOrientation: landscape
+	w.WriteUint32LE(scale)                                         // desktopScaleFactor
+	w.WriteUint32LE(DeviceScaleFactor(scale))                      // deviceScaleFactor
+}
+
+// physicalMillimeters is the physical length of pixels on a 96 DPI display
+// scaled by scale percent.
+func physicalMillimeters(pixels uint16, scale uint32) uint32 {
+	mm := uint32(pixels) * 2540 / (96 * scale)
+	return min(max(mm, 10), 10000)
+}
+
+// DeviceScaleFactor picks the deviceScaleFactor (100, 140 or 180) that goes
+// with a desktop scale factor.
+func DeviceScaleFactor(scale uint32) uint32 {
+	switch {
+	case scale >= 180:
+		return 180
+	case scale >= 140:
+		return 140
+	default:
+		return 100
+	}
 }
 
 func writeClientSecurityData(w *core.Writer) {

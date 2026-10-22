@@ -32,6 +32,9 @@ const (
 	infoLogonErrors       = 0x01000000
 
 	afInet = 0x0002
+
+	perfEnableFontSmoothing      = 0x00000080
+	perfEnableDesktopComposition = 0x00000100
 )
 
 // LoginInfo is the identity and auto-logon settings sent in the Client Info PDU.
@@ -87,7 +90,9 @@ func writeExtendedInfo(w *core.Writer) {
 	// clientTimeZone (TS_TIME_ZONE_INFORMATION) is 172 bytes; zeros = UTC.
 	w.Write(make([]byte, 172))
 	w.WriteUint32LE(0) // clientSessionId
-	w.WriteUint32LE(0) // performanceFlags
+	// performanceFlags: keep every visual effect on and turn on ClearType font
+	// smoothing and desktop composition, as the Windows client does on a LAN.
+	w.WriteUint32LE(perfEnableFontSmoothing | perfEnableDesktopComposition)
 	w.WriteUint16LE(0) // cbAutoReconnectCookie
 }
 

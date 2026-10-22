@@ -15,13 +15,12 @@
 package gordp
 
 import (
-	"errors"
 	"image"
-	"net"
 	"time"
 
 	"github.com/casvisor/gordp/bitmap"
 	"github.com/casvisor/gordp/pdu"
+	"github.com/casvisor/gordp/tpkt"
 )
 
 // Framebuffer returns the current desktop image. It is updated in place by
@@ -41,57 +40,154 @@ func (c *Client) initFramebuffer() {
 	c.fb = image.NewRGBA(image.Rect(0, 0, w, h))
 }
 
+// received is one PDU (or the read error that ended the stream) from the
+// background reader.
+type received struct {
+	channelID uint16
+	msg       *tpkt.PDU
+	err       error
+}
+
+// startReader reads PDUs in the background once the session is up, so the pump
+// can wait on them with a timeout. Read deadlines on the TLS connection would
+// abandon a PDU that is half read when the deadline hits and desync the stream.
+func (c *Client) startReader() {
+	c.recv = make(chan received, 256)
+	c.done = make(chan struct{})
+	go func() {
+		for {
+			channelID, msg, err := c.mcs.Receive()
+			select {
+			case c.recv <- received{channelID, msg, err}:
+			case <-c.done:
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+}
+
+// next returns the next PDU, waiting up to d. ok is false on timeout.
+func (c *Client) next(d time.Duration) (r received, ok bool) {
+	if d <= 0 {
+		select {
+		case r = <-c.recv:
+			return r, true
+		default:
+			return r, false
+		}
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case r = <-c.recv:
+		return r, true
+	case <-timer.C:
+		return r, false
+	}
+}
+
 // PumpUpdates reads server updates for up to d and applies bitmap updates to the
-// framebuffer. It returns the number of rectangles applied. A read timeout ends
-// the loop normally.
+// framebuffer. It returns the number of rectangles applied.
 func (c *Client) PumpUpdates(d time.Duration) (int, error) {
 	if c.fb == nil {
 		c.initFramebuffer()
 	}
 	deadline := time.Now().Add(d)
-	_ = c.conn.SetReadDeadline(deadline)
-	defer func() { _ = c.conn.SetReadDeadline(time.Time{}) }()
-
 	rects := 0
-	for time.Now().Before(deadline) {
-		channelID, msg, err := c.mcs.Receive()
+	for {
+		left := time.Until(deadline)
+		if left <= 0 {
+			return rects, nil
+		}
+		r, ok := c.next(left)
+		if !ok {
+			return rects, nil
+		}
+		n, err := c.process(r)
+		rects += n
 		if err != nil {
-			var netErr net.Error
-			if errors.As(err, &netErr) && netErr.Timeout() {
-				return rects, nil
-			}
 			return rects, err
 		}
+	}
+}
 
-		if !msg.FastPath && c.handleChannelData(channelID, msg.Payload) {
-			continue
+// Frame pacing for PumpFrame: a burst of updates that arrive less than
+// frameIdle apart is one frame, but a frame is cut after frameMax so a steady
+// stream (a video playing) still reaches the viewer.
+const (
+	frameIdle = 12 * time.Millisecond
+	frameMax  = 80 * time.Millisecond
+)
+
+// PumpFrame waits up to wait for the server to send something, then applies
+// updates until the server pauses, so that everything Windows sends for one
+// change (a window being repainted tile by tile) is applied together; the
+// caller then sends the accumulated changes to its viewer at once. It returns the number of rectangles
+// applied, 0 when nothing arrived within wait.
+func (c *Client) PumpFrame(wait time.Duration) (int, error) {
+	if c.fb == nil {
+		c.initFramebuffer()
+	}
+	r, ok := c.next(wait)
+	if !ok {
+		return 0, nil
+	}
+	cut := time.Now().Add(frameMax)
+	rects := 0
+	for {
+		n, err := c.process(r)
+		rects += n
+		if err != nil {
+			return rects, err
 		}
+		idle := min(frameIdle, time.Until(cut))
+		if idle <= 0 {
+			return rects, nil
+		}
+		if r, ok = c.next(idle); !ok {
+			return rects, nil
+		}
+	}
+}
 
-		if msg.FastPath {
-			updates, err := c.fpReasm.Parse(msg.Payload)
+// process applies one received PDU.
+func (c *Client) process(r received) (int, error) {
+	if r.err != nil {
+		return 0, r.err
+	}
+	channelID, msg := r.channelID, r.msg
+	if !msg.FastPath && c.handleChannelData(channelID, msg.Payload) {
+		return 0, nil
+	}
+	if !msg.FastPath {
+		return c.handleSlowPath(msg.Payload)
+	}
+
+	updates, err := c.fpReasm.Parse(msg.Payload)
+	if err != nil {
+		return 0, err
+	}
+	rects := 0
+	for _, u := range updates {
+		if c.OnFastPath != nil {
+			c.OnFastPath(u.Code, u.Data)
+		}
+		switch u.Code {
+		case pdu.FastPathUpdateBitmap:
+			n, err := c.applyBitmapUpdate(u.Data)
 			if err != nil {
 				return rects, err
 			}
-			for _, u := range updates {
-				if c.OnFastPath != nil {
-					c.OnFastPath(u.Code, u.Data)
-				}
-				if u.Code == pdu.FastPathUpdateBitmap {
-					n, err := c.applyBitmapUpdate(u.Data)
-					if err != nil {
-						return rects, err
-					}
-					rects += n
-				}
+			rects += n
+		case pdu.FastPathUpdatePointerNull, pdu.FastPathUpdatePointerDef, pdu.FastPathUpdateColor,
+			pdu.FastPathUpdateCached, pdu.FastPathUpdatePointer, pdu.FastPathUpdateLargePointer:
+			if err := c.handlePointerUpdate(u.Code, u.Data); err != nil {
+				return rects, err
 			}
-			continue
 		}
-
-		n, err := c.handleSlowPath(msg.Payload)
-		if err != nil {
-			return rects, err
-		}
-		rects += n
 	}
 	return rects, nil
 }

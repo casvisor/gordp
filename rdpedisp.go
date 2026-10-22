@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/casvisor/gordp/core"
+	"github.com/casvisor/gordp/mcs"
 )
 
 // MS-RDPEDISP (Display Control Virtual Channel Extension) lets the client ask
@@ -52,6 +53,10 @@ func (c *Client) Resize(width, height uint16) error {
 		return fmt.Errorf("gordp: display control channel not available")
 	}
 	width &^= 1 // width must be even
+	scale := c.scale
+	if scale == 0 {
+		scale = 100
+	}
 	width = clampDim(width)
 	height = clampDim(height)
 
@@ -61,16 +66,16 @@ func (c *Client) Resize(width, height uint16) error {
 	w.WriteUint32LE(40)                      // MonitorLayoutSize
 	w.WriteUint32LE(1)                       // NumMonitors
 	// DISPLAYCONTROL_MONITOR_LAYOUT (40 bytes).
-	w.WriteUint32LE(dispCtlMonitorPrimary) // Flags
-	w.WriteUint32LE(0)                     // Left
-	w.WriteUint32LE(0)                     // Top
-	w.WriteUint32LE(uint32(width))         // Width
-	w.WriteUint32LE(uint32(height))        // Height
-	w.WriteUint32LE(0)                     // PhysicalWidth (ignored when 0)
-	w.WriteUint32LE(0)                     // PhysicalHeight
-	w.WriteUint32LE(0)                     // Orientation: landscape
-	w.WriteUint32LE(100)                   // DesktopScaleFactor
-	w.WriteUint32LE(100)                   // DeviceScaleFactor
+	w.WriteUint32LE(dispCtlMonitorPrimary)        // Flags
+	w.WriteUint32LE(0)                            // Left
+	w.WriteUint32LE(0)                            // Top
+	w.WriteUint32LE(uint32(width))                // Width
+	w.WriteUint32LE(uint32(height))               // Height
+	w.WriteUint32LE(0)                            // PhysicalWidth (ignored when 0)
+	w.WriteUint32LE(0)                            // PhysicalHeight
+	w.WriteUint32LE(0)                            // Orientation: landscape
+	w.WriteUint32LE(scale)                        // DesktopScaleFactor
+	w.WriteUint32LE(mcs.DeviceScaleFactor(scale)) // DeviceScaleFactor
 
 	c.pendingWidth = width
 	c.pendingHeight = height
