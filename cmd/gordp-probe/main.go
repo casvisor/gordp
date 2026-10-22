@@ -96,7 +96,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "create png: %v\n", err)
 			os.Exit(1)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		if err := png.Encode(f, c.Framebuffer()); err != nil {
 			fmt.Fprintf(os.Stderr, "encode png: %v\n", err)
 			os.Exit(1)
