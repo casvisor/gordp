@@ -34,8 +34,9 @@ const (
 
 // CHANNEL_PDU_HEADER flags (MS-RDPBCGR 2.2.6.1.1).
 const (
-	channelFlagFirst = 0x00000001
-	channelFlagLast  = 0x00000002
+	channelFlagFirst        = 0x00000001
+	channelFlagLast         = 0x00000002
+	channelFlagShowProtocol = 0x00000010
 
 	// channelChunkLength is the maximum virtual channel chunk the client sends
 	// per PDU; larger payloads are split across CHANNEL_FLAG_FIRST/LAST frames.
@@ -44,9 +45,10 @@ const (
 
 // vchannel is one joined static virtual channel and its reassembly buffer.
 type vchannel struct {
-	name string
-	id   uint16
-	buf  []byte
+	name    string
+	id      uint16
+	options uint32
+	buf     []byte
 }
 
 // vcState holds all virtual channel state: the joined static channels, the
@@ -94,7 +96,7 @@ func (c *Client) initChannels() {
 		if i >= len(ids) {
 			break
 		}
-		vc := &vchannel{name: def.Name, id: ids[i]}
+		vc := &vchannel{name: def.Name, id: ids[i], options: def.Options}
 		c.vc.byID[ids[i]] = vc
 		c.vc.byName[def.Name] = vc
 	}
@@ -119,6 +121,11 @@ func (c *Client) sendChannel(name string, data []byte) error {
 		}
 		if end == total {
 			flags |= channelFlagLast
+		}
+		// A channel opened with CHANNEL_OPTION_SHOW_PROTOCOL must mark every chunk;
+		// Windows silently drops unmarked client data on such a channel (cliprdr).
+		if vc.options&channelOptionShowProtocol != 0 {
+			flags |= channelFlagShowProtocol
 		}
 		w := core.NewWriter()
 		w.WriteUint32LE(uint32(total))
