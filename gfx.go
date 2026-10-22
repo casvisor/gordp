@@ -329,7 +329,7 @@ func (d *GFXDecoder) pdu(cmd uint16, body []byte) error {
 		}
 		id := u16()
 		b, g, rr, _ := body[2], body[3], body[4], body[5]
-		r.Skip(4)
+		_ = r.Skip(4)
 		n := int(u16())
 		rects := make([]image.Rectangle, 0, n)
 		for i := 0; i < n; i++ {
@@ -359,7 +359,7 @@ func (d *GFXDecoder) pdu(cmd uint16, body []byte) error {
 			return errShortPDU
 		}
 		id := u16()
-		r.Skip(8) // cacheKey
+		_ = r.Skip(8) // cacheKey
 		slot := u16()
 		rect, err := readRect16(r)
 		if err != nil {
@@ -386,7 +386,7 @@ func (d *GFXDecoder) pdu(cmd uint16, body []byte) error {
 			return errShortPDU
 		}
 		id, codec := u16(), u16()
-		r.Skip(1) // pixelFormat
+		_ = r.Skip(1) // pixelFormat
 		rect, err := readRect16(r)
 		if err != nil {
 			return err
@@ -402,7 +402,7 @@ func (d *GFXDecoder) pdu(cmd uint16, body []byte) error {
 			return errShortPDU
 		}
 		id, codec := u16(), u16()
-		r.Skip(5) // codecContextId, pixelFormat
+		_ = r.Skip(5) // codecContextId, pixelFormat
 		data, err := r.ReadBytes(int(u32()))
 		if err != nil {
 			return err
