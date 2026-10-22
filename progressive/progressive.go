@@ -121,6 +121,7 @@ type tile struct {
 	srl, raw [3][]byte
 
 	pixels  []byte // 64x64 RGBA
+	dirty   bool
 	sign    [3][]int16
 	current [3][]int16
 	bitPos  [3]quant
@@ -143,12 +144,23 @@ type surface struct {
 	width, height int
 	gridWidth     int
 	tiles         map[int]*tile
+
+	// The tiles decoded during the current graphics frame. Each bitmap of
+	// the frame shows all of them, cut to its region: a region may cover a
+	// tile decoded by an earlier bitmap of the frame whose pixels other
+	// commands have drawn over since.
+	frameID  uint32
+	hasFrame bool
+	updated  []*tile
 }
 
 // Decoder decodes the progressive codec for all surfaces of a session.
 type Decoder struct {
 	surfaces map[uint16]*surface
 	ctxFlags byte
+	// lastRects are the rectangles of the last region decoded, which clip
+	// the output, as in FreeRDP.
+	lastRects []image.Rectangle
 }
 
 // NewDecoder returns a decoder with no surfaces.
@@ -180,14 +192,18 @@ type region struct {
 	tiles    []*tile
 }
 
-// Decode decodes one progressive bitmap for a surface and returns the parts of
-// the surface it changed.
-func (d *Decoder) Decode(id uint16, src []byte) ([]Tile, error) {
+// Decode decodes one progressive bitmap for a surface during graphics frame
+// frameID and returns the parts of the surface to draw.
+func (d *Decoder) Decode(id uint16, frameID uint32, src []byte) ([]Tile, error) {
 	s := d.surfaces[id]
 	if s == nil {
 		return nil, fmt.Errorf("progressive: unknown surface %d", id)
 	}
-	var out []Tile
+	if !s.hasFrame || s.frameID != frameID {
+		s.hasFrame = true
+		s.frameID = frameID
+		s.updated = nil
+	}
 	frameBegun := false
 	for len(src) > 0 {
 		if len(src) < 6 {
@@ -227,12 +243,12 @@ func (d *Decoder) Decode(id uint16, src []byte) ([]Tile, error) {
 			if err := reg.decodeTiles(); err != nil {
 				return nil, err
 			}
-			out = append(out, s.output(reg)...)
+			d.lastRects = reg.rects
 		default:
 			return nil, fmt.Errorf("progressive: unknown block 0x%04x", blockType)
 		}
 	}
-	return out, nil
+	return s.output(d.lastRects), nil
 }
 
 func (s *surface) parseRegion(b []byte) (*region, error) {
@@ -369,6 +385,10 @@ func (s *surface) readTile(reg *region, blockType uint16, b []byte) error {
 		t.raw = [3][]byte{parts[1], parts[3], parts[5]}
 	}
 	reg.tiles = append(reg.tiles, t)
+	if !t.dirty {
+		s.updated = append(s.updated, t)
+	}
+	t.dirty = true
 	return nil
 }
 
@@ -697,18 +717,15 @@ func clip(v int16) byte {
 	return byte(v)
 }
 
-// output cuts the region's tiles to its rectangles and the surface.
-func (s *surface) output(reg *region) []Tile {
+// output cuts the tiles decoded during the frame to the rectangles and the
+// surface.
+func (s *surface) output(rects []image.Rectangle) []Tile {
 	bounds := image.Rect(0, 0, s.width, s.height)
 	var out []Tile
-	seen := map[*tile]bool{}
-	for _, t := range reg.tiles {
-		if seen[t] {
-			continue
-		}
-		seen[t] = true
+	for _, t := range s.updated {
+		t.dirty = false
 		tr := image.Rect(t.xIdx*64, t.yIdx*64, t.xIdx*64+64, t.yIdx*64+64)
-		for _, rr := range clipRects(reg.rects, tr.Intersect(bounds)) {
+		for _, rr := range clipRects(rects, tr.Intersect(bounds)) {
 			w, h := rr.Dx(), rr.Dy()
 			px := make([]byte, w*h*4)
 			for y := 0; y < h; y++ {

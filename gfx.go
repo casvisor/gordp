@@ -100,7 +100,9 @@ type GFXHandler interface {
 	// StoreGlyph saves rect of the surface, as it is after drawing, in the
 	// ClearCodec glyph cache under index.
 	StoreGlyph(index uint16, id uint16, rect image.Rectangle)
-	// DrawGlyph draws the glyph saved under index at rect.
+	// DrawGlyph draws the glyph saved under index at rect. A glyph is a run
+	// of pixels: the saved pixels are laid out again in rows of rect's width,
+	// which may differ from the width they were saved with.
 	DrawGlyph(index uint16, id uint16, rect image.Rectangle)
 }
 
@@ -135,6 +137,7 @@ type GFXDecoder struct {
 	progressive *progressive.Decoder
 
 	caps        uint32
+	frameID     uint32
 	unsupported map[uint16]int
 }
 
@@ -317,7 +320,8 @@ func (d *GFXDecoder) pdu(cmd uint16, body []byte) error {
 			return errShortPDU
 		}
 		u32()
-		h.StartFrame(u32())
+		d.frameID = u32()
+		h.StartFrame(d.frameID)
 	case gfxCmdEndFrame:
 		if len(body) < 4 {
 			return errShortPDU
@@ -411,7 +415,7 @@ func (d *GFXDecoder) pdu(cmd uint16, body []byte) error {
 			d.countUnsupported(codec)
 			return nil
 		}
-		tiles, err := d.progressive.Decode(id, data)
+		tiles, err := d.progressive.Decode(id, d.frameID, data)
 		if err != nil {
 			return err
 		}
