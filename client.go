@@ -32,6 +32,7 @@ import (
 	"github.com/casvisor/gordp/mcs"
 	"github.com/casvisor/gordp/nla"
 	"github.com/casvisor/gordp/pdu"
+	"github.com/casvisor/gordp/rdpdr"
 	"github.com/casvisor/gordp/tpkt"
 	"github.com/casvisor/gordp/x224"
 )
@@ -89,6 +90,12 @@ type Client struct {
 	// OnClipboard, if set, is called with text copied to the remote host's
 	// clipboard, for syncing it to the local or browser clipboard.
 	OnClipboard func(text string)
+	// OnDriveEvent, if set, is called for every auditable file operation the
+	// remote session performs on a redirected drive.
+	OnDriveEvent func(drive string, ev rdpdr.Event)
+
+	driveConfigs []Drive
+	drives       []*rdpdr.Drive
 }
 
 // WithDesktopSize sets the desktop resolution requested from the server.
@@ -126,6 +133,9 @@ func NewClient(addr, domain, username, password string, opts ...Option) *Client 
 // selecting CredSSP/NLA, the TLS handshake, then the CredSSP exchange that
 // authenticates and delegates the password.
 func (c *Client) Connect() error {
+	if err := c.initDrives(); err != nil {
+		return fmt.Errorf("gordp: drive: %w", err)
+	}
 	tcp, err := net.DialTimeout("tcp", c.addr, c.timeout)
 	if err != nil {
 		return fmt.Errorf("gordp: dial %s: %w", c.addr, err)
@@ -407,6 +417,7 @@ func (c *Client) IOChannel() uint16 {
 
 // Close closes the connection.
 func (c *Client) Close() error {
+	c.closeDrives()
 	if c.conn != nil {
 		return c.conn.Close()
 	}

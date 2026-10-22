@@ -69,6 +69,9 @@ type vcState struct {
 	clipCapsSent    bool   // client capabilities PDU has been sent
 	clipPending     string // text offered to the remote host
 	clipHavePending bool
+
+	// Device redirection (MS-RDPEFS) protocol minor version agreed with the server.
+	rdpdrMinor uint16
 }
 
 // requestedChannels is the static virtual channel list the client asks for:
@@ -182,6 +185,8 @@ func (c *Client) dispatchChannel(name string, data []byte) {
 		c.handleCliprdr(data)
 	case channelDrdynvc:
 		c.handleDrdynvc(data)
+	case channelRdpdr:
+		c.handleRdpdr(data)
 	}
 }
 

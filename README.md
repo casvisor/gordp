@@ -34,7 +34,9 @@ tested against a default-configuration Windows Server 2022:
 - [x] Input: fast-path mouse (move, buttons, wheel) and keyboard (scancode, unicode)
 - [x] Virtual channels: static channels and dynamic channels (drdynvc)
 - [x] Clipboard (text, both directions) and display resize
-- [ ] Drive redirection, RemoteApp
+- [x] Drive redirection: a local directory appears as `\\tsclient\<name>`, with
+      read-only / write-only modes and audit events for every file operation
+- [ ] RemoteApp
 - [x] Session recording and replay (fast-path update capture, PNG reconstruction)
 
 A full 32bpp desktop frame decodes correctly against Windows Server 2022: run
