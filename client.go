@@ -59,14 +59,22 @@ type Client struct {
 	timeout         time.Duration
 	certFingerprint string
 
-	width  uint16
-	height uint16
-	active bool
+	width   uint16
+	height  uint16
+	active  bool
+	shareID uint32
+
+	// pendingWidth/pendingHeight hold a desktop size requested via Resize; the
+	// server honors it with a deactivate-reactivate sequence that the pump then
+	// applies to width/height and the framebuffer.
+	pendingWidth  uint16
+	pendingHeight uint16
 
 	conn    *tls.Conn
 	tpkt    *tpkt.Layer
 	x224    *x224.Layer
 	mcs     *mcs.Layer
+	vc      *vcState
 	fpReasm pdu.FastPathReassembler
 	fb      *image.RGBA
 	lastBpp int
@@ -78,6 +86,9 @@ type Client struct {
 	// OnFastPath, if set, is called with the code and raw data of every
 	// reassembled fast-path update, for session recording.
 	OnFastPath func(code byte, data []byte)
+	// OnClipboard, if set, is called with text copied to the remote host's
+	// clipboard, for syncing it to the local or browser clipboard.
+	OnClipboard func(text string)
 }
 
 // WithDesktopSize sets the desktop resolution requested from the server.
@@ -153,15 +164,18 @@ func (c *Client) Connect() error {
 	}
 
 	// MCS: GCC conference create, erect domain, attach user, join channels.
+	c.vc = &vcState{requested: requestedChannels()}
 	c.mcs = mcs.New(c.x224)
 	if err := c.mcs.Connect(mcs.ClientConfig{
 		DesktopWidth:     c.width,
 		DesktopHeight:    c.height,
 		SelectedProtocol: c.x224.SelectedProtocol,
+		Channels:         c.vc.requested,
 	}); err != nil {
 		_ = tlsConn.Close()
 		return err
 	}
+	c.initChannels()
 
 	// Client Info PDU (login) on the I/O channel, then the licensing exchange.
 	info := pdu.BuildClientInfo(pdu.LoginInfo{
@@ -221,6 +235,7 @@ func (c *Client) activate() error {
 	if err != nil {
 		return err
 	}
+	c.shareID = shareID
 
 	width, height := c.width, c.height
 	if width == 0 {
@@ -246,6 +261,49 @@ func (c *Client) activate() error {
 	}
 
 	return c.waitFontMap()
+}
+
+// reactivate re-runs the capability exchange after the server re-sends Demand
+// Active, which it does to apply a desktop resize. It adopts the pending size,
+// reallocates the framebuffer, and sends Confirm Active and the finalization
+// PDUs; the server then repaints at the new size.
+func (c *Client) reactivate(body []byte) error {
+	da, err := pdu.ParseDemandActive(body)
+	if err != nil {
+		return err
+	}
+	c.shareID = da.ShareID
+	if c.pendingWidth != 0 {
+		c.width = c.pendingWidth
+	}
+	if c.pendingHeight != 0 {
+		c.height = c.pendingHeight
+	}
+	c.pendingWidth, c.pendingHeight = 0, 0
+	c.initFramebuffer()
+
+	width, height := c.width, c.height
+	if width == 0 {
+		width = 1024
+	}
+	if height == 0 {
+		height = 768
+	}
+	user := c.mcs.UserID
+	if err := c.sendIO(pdu.BuildConfirmActive(user, c.shareID, width, height)); err != nil {
+		return fmt.Errorf("gordp: reactivate confirm active: %w", err)
+	}
+	for _, p := range [][]byte{
+		pdu.BuildSynchronize(user, c.shareID, c.mcs.Server.IOChannelID),
+		pdu.BuildControlCooperate(user, c.shareID),
+		pdu.BuildControlRequest(user, c.shareID),
+		pdu.BuildFontList(user, c.shareID),
+	} {
+		if err := c.sendIO(p); err != nil {
+			return fmt.Errorf("gordp: reactivate finalization pdu: %w", err)
+		}
+	}
+	return nil
 }
 
 func (c *Client) waitDemandActive() (uint32, error) {

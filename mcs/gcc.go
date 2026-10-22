@@ -37,6 +37,13 @@ const (
 // gccOID is the t124 object identifier {0 0 20 124 0 1}.
 var gccOID = [6]byte{0, 0, 20, 124, 0, 1}
 
+// ChannelDef is one static virtual channel the client requests in the GCC
+// network data. Options is a bitmask of CHANNEL_OPTION_* flags.
+type ChannelDef struct {
+	Name    string
+	Options uint32
+}
+
 // ClientConfig carries the few GCC client-core fields that matter to the
 // session: the desktop size and the security protocol X.224 selected (the
 // server checks the latter matches).
@@ -45,6 +52,10 @@ type ClientConfig struct {
 	DesktopHeight    uint16
 	SelectedProtocol uint32
 	Name             string
+	// Channels are the static virtual channels to request, in order. The server
+	// assigns an ID to each and returns them, in the same order, in
+	// ServerData.ChannelIDs.
+	Channels []ChannelDef
 }
 
 // buildClientData assembles the TS_UD_CS_* blocks that go in the GCC userData.
@@ -52,7 +63,7 @@ func buildClientData(cfg ClientConfig) []byte {
 	w := core.NewWriter()
 	writeClientCoreData(w, cfg)
 	writeClientSecurityData(w)
-	writeClientNetworkData(w)
+	writeClientNetworkData(w, cfg.Channels)
 	writeClientClusterData(w)
 	return w.Bytes()
 }
@@ -97,10 +108,17 @@ func writeClientSecurityData(w *core.Writer) {
 	w.WriteUint32LE(0) // extEncryptionMethods
 }
 
-func writeClientNetworkData(w *core.Writer) {
-	const length = 8
-	writeUserDataHeader(w, csNet, length)
-	w.WriteUint32LE(0) // channelCount: no virtual channels yet
+func writeClientNetworkData(w *core.Writer, channels []ChannelDef) {
+	// TS_UD_CS_NET: header(4) + channelCount(4) + CHANNEL_DEF(12) each.
+	length := 8 + 12*len(channels)
+	writeUserDataHeader(w, csNet, uint16(length))
+	w.WriteUint32LE(uint32(len(channels)))
+	for _, ch := range channels {
+		var name [8]byte
+		copy(name[:], ch.Name) // ASCII, null-padded to 8 bytes
+		w.Write(name[:])
+		w.WriteUint32LE(ch.Options)
+	}
 }
 
 func writeClientClusterData(w *core.Writer) {

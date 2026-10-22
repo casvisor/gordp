@@ -54,13 +54,17 @@ func (c *Client) PumpUpdates(d time.Duration) (int, error) {
 
 	rects := 0
 	for time.Now().Before(deadline) {
-		_, msg, err := c.mcs.Receive()
+		channelID, msg, err := c.mcs.Receive()
 		if err != nil {
 			var netErr net.Error
 			if errors.As(err, &netErr) && netErr.Timeout() {
 				return rects, nil
 			}
 			return rects, err
+		}
+
+		if !msg.FastPath && c.handleChannelData(channelID, msg.Payload) {
+			continue
 		}
 
 		if msg.FastPath {
@@ -96,6 +100,12 @@ func (c *Client) handleSlowPath(payload []byte) (int, error) {
 	sc, err := pdu.ReadShareControl(c.stripSecHeader(payload))
 	if err != nil {
 		return 0, err
+	}
+	if sc.PduType == pdu.PdutypeDemandActive {
+		// The server re-sends Demand Active to reactivate the session, which is
+		// how it applies a desktop resize requested over the DisplayControl
+		// channel. Re-run the capability exchange at the new size.
+		return 0, c.reactivate(sc.Body)
 	}
 	if sc.PduType != pdu.PdutypeData {
 		return 0, nil
