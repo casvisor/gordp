@@ -89,6 +89,9 @@ type Client struct {
 	fb      *image.RGBA
 	lastBpp int
 
+	gfx        *gfxState
+	channelErr error
+
 	recv      chan received
 	done      chan struct{}
 	closeOnce sync.Once
@@ -104,6 +107,9 @@ type Client struct {
 	// OnClipboard, if set, is called with text copied to the remote host's
 	// clipboard, for syncing it to the local or browser clipboard.
 	OnClipboard func(text string)
+	// OnGFXPDU, if set, is called with every decompressed graphics pipeline
+	// PDU (header included) before it is handled, for session recording.
+	OnGFXPDU func(pdu []byte)
 	// OnPointer, if set, is called when the remote session changes the mouse
 	// cursor shape.
 	OnPointer func(p *Pointer)
@@ -215,6 +221,7 @@ func (c *Client) Connect() error {
 		DesktopWidth:     c.width,
 		DesktopHeight:    c.height,
 		ScaleFactor:      c.scale,
+		GFX:              c.gfx != nil,
 		SelectedProtocol: c.x224.SelectedProtocol,
 		Channels:         c.vc.requested,
 	}); err != nil {

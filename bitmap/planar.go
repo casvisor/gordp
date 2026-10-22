@@ -29,6 +29,13 @@ const (
 // which is what Windows sends for a 32bpp desktop, with either raw or
 // RLE-compressed colour planes.
 func decodePlanar32(src []byte, w, h int) ([]byte, error) {
+	return DecodePlanar(src, w, h, true)
+}
+
+// DecodePlanar decodes an RDP 6.0 planar bitmap into top-down RGBA. Bitmap
+// updates store the planes bottom-up; the graphics pipeline (MS-RDPEGFX)
+// stores them top-down.
+func DecodePlanar(src []byte, w, h int, bottomUp bool) ([]byte, error) {
 	if len(src) < 1 {
 		return nil, errShort
 	}
@@ -73,10 +80,12 @@ func decodePlanar32(src []byte, w, h int) ([]byte, error) {
 		rp, gp, bp = planes[1], planes[2], planes[3]
 	}
 
-	// Planar planes are stored bottom-up; flip to top-down while assembling.
 	out := make([]byte, w*h*4)
 	for y := 0; y < h; y++ {
-		srcRow := (h - 1 - y) * w
+		srcRow := y * w
+		if bottomUp {
+			srcRow = (h - 1 - y) * w
+		}
 		for x := 0; x < w; x++ {
 			i := srcRow + x
 			dst := (y*w + x) * 4

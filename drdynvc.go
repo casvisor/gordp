@@ -100,7 +100,7 @@ func (c *Client) dvcSendCapsResponse() {
 func (c *Client) dvcHandleCreate(data []byte, cbChId byte) {
 	id, rest := dvcReadChannelID(data[1:], cbChId)
 	name := dvcReadName(rest)
-	want := dvcWantChannel(name)
+	want := c.dvcWantChannel(name)
 	status := uint32(0xC0000001) // rejected
 	if want {
 		status = 0
@@ -113,6 +113,9 @@ func (c *Client) dvcHandleCreate(data []byte, cbChId byte) {
 	dvcWriteChannelID(w, id, cbChId)
 	w.WriteUint32LE(status)
 	_ = c.sendChannel(channelDrdynvc, w.Bytes())
+	if want && strings.EqualFold(name, gfxChannelName) {
+		c.gfxSendCaps()
+	}
 }
 
 // dvcHandleData reassembles a (possibly fragmented) data PDU and dispatches a
@@ -142,6 +145,10 @@ func (c *Client) dvcHandleData(data []byte, cbChId byte, first bool, sp byte) {
 			c.handleCliprdr(payload)
 		case isDisplayControlName(ch.name):
 			c.handleDisplayControl(payload)
+		case strings.EqualFold(ch.name, gfxChannelName):
+			if err := c.handleGFX(payload); err != nil && c.channelErr == nil {
+				c.channelErr = err
+			}
 		}
 	}
 }
@@ -223,8 +230,8 @@ func (c *Client) dvcCliprdrName() string {
 	return ""
 }
 
-func dvcWantChannel(name string) bool {
-	return isCliprdrName(name) || isDisplayControlName(name)
+func (c *Client) dvcWantChannel(name string) bool {
+	return isCliprdrName(name) || isDisplayControlName(name) || (c.gfx != nil && strings.EqualFold(name, gfxChannelName))
 }
 
 func isCliprdrName(name string) bool {

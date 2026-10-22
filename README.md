@@ -30,7 +30,13 @@ tested against a default-configuration Windows Server 2022:
 - [x] Fast-path (and slow-path) bitmap update reception, framebuffer compositing
 - [x] Bitmap decoding: interleaved RLE (15/16bpp) and the RDP 6.0 planar codec
       (24/32bpp true colour), plus uncompressed
-- [ ] Bitmap decoding: RemoteFX, GFX / H.264
+- [x] Graphics pipeline (MS-RDPEGFX), the path current Windows clients use:
+      RDP8 bulk decompression (ZGFX), surfaces, caches, frame acknowledgement,
+      and the ClearCodec (with NSCodec and RLEX), planar and RemoteFX
+      Progressive codecs. Output matches FreeRDP's decoders.
+- [ ] H.264 (AVC420 / AVC444): Windows only encodes it when a group policy
+      enables it
+- [x] Mouse cursor shapes, including large cursors on scaled desktops
 - [x] Input: fast-path mouse (move, buttons, wheel) and keyboard (scancode, unicode)
 - [x] Virtual channels: static channels and dynamic channels (drdynvc)
 - [x] Clipboard (text, both directions) and display resize
@@ -42,10 +48,9 @@ tested against a default-configuration Windows Server 2022:
 A full 32bpp desktop frame decodes correctly against Windows Server 2022: run
 `gordp-probe` with `-screenshot out.png`.
 
-The graphics path is planned to hand fast-path updates to the browser for
-decoding (via an IronRDP WASM module) rather than decoding in Go, so H.264 / GFX
-stay reachable and the gateway stays light. See the design notes in the Casvisor
-repo (`casvisor/rdp-client.md`).
+With `WithGFX`, gordp decodes every codec and hands the viewer the surface
+commands (fills, copies, cache and glyph operations, decoded bitmaps), so a web
+viewer keeps the surfaces and draws each server frame at once.
 
 ## Trying it
 

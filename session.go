@@ -160,6 +160,10 @@ func (c *Client) process(r received) (int, error) {
 	}
 	channelID, msg := r.channelID, r.msg
 	if !msg.FastPath && c.handleChannelData(channelID, msg.Payload) {
+		if err := c.channelErr; err != nil {
+			c.channelErr = nil
+			return 0, err
+		}
 		return 0, nil
 	}
 	if !msg.FastPath {
