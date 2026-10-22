@@ -24,6 +24,7 @@ import (
 const (
 	infoMouse             = 0x00000001
 	infoDisableCtrlAltDel = 0x00000002
+	infoAutoLogon         = 0x00000008
 	infoUnicode           = 0x00000010
 	infoMaximizeShell     = 0x00000020
 	infoLogonNotify       = 0x00000040
@@ -47,7 +48,7 @@ func BuildClientInfo(info LoginInfo) []byte {
 	w := core.NewWriter()
 	writeSecurityHeader(w, SecInfoPkt)
 
-	flags := uint32(infoMouse | infoDisableCtrlAltDel | infoUnicode |
+	flags := uint32(infoMouse | infoDisableCtrlAltDel | infoAutoLogon | infoUnicode |
 		infoMaximizeShell | infoLogonNotify | infoEnableWindowsKey | infoLogonErrors)
 
 	domain := utf16z(info.Domain)
