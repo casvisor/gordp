@@ -54,12 +54,19 @@ func WithServerCertFingerprint(sha256hex string) Option {
 	return func(c *Client) { c.certFingerprint = sha256hex }
 }
 
+// WithDialer opens the connection to the host with dial instead of a direct
+// TCP connection, e.g. through an SSH jump host.
+func WithDialer(dial func(network, addr string) (net.Conn, error)) Option {
+	return func(c *Client) { c.dial = dial }
+}
+
 // Client is a connection to one RDP host.
 type Client struct {
 	addr            string
 	creds           nla.Credentials
 	timeout         time.Duration
 	certFingerprint string
+	dial            func(network, addr string) (net.Conn, error)
 
 	width   uint16
 	height  uint16
@@ -158,7 +165,13 @@ func (c *Client) Connect() error {
 	if err := c.initDrives(); err != nil {
 		return fmt.Errorf("gordp: drive: %w", err)
 	}
-	tcp, err := net.DialTimeout("tcp", c.addr, c.timeout)
+	var tcp net.Conn
+	var err error
+	if c.dial != nil {
+		tcp, err = c.dial("tcp", c.addr)
+	} else {
+		tcp, err = net.DialTimeout("tcp", c.addr, c.timeout)
+	}
 	if err != nil {
 		return fmt.Errorf("gordp: dial %s: %w", c.addr, err)
 	}
