@@ -88,6 +88,16 @@ func WithDesktopSize(width, height uint16) Option {
 	}
 }
 
+// WithSPNEGO carries the NLA/CredSSP authentication inside SPNEGO/Negotiate
+// tokens, the way the Windows client does, instead of raw NTLM. Use it for
+// servers that require the Negotiate security package; the default raw-NTLM path
+// works against standard Windows hosts.
+func WithSPNEGO() Option {
+	return func(c *Client) {
+		c.creds.UseSPNEGO = true
+	}
+}
+
 // NewClient creates a client for addr ("host:port"). Domain may be empty.
 func NewClient(addr, domain, username, password string, opts ...Option) *Client {
 	c := &Client{

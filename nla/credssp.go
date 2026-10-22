@@ -34,8 +34,11 @@ import (
 	"encoding/asn1"
 	"fmt"
 
+	"github.com/oiweiwei/go-msrpc/ssp"
 	"github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 	"github.com/oiweiwei/go-msrpc/ssp/ntlm"
+	"github.com/oiweiwei/go-msrpc/ssp/spnego"
 )
 
 // The CredSSP version we claim. Version 6 is what current Windows speaks; from
@@ -81,6 +84,11 @@ type Credentials struct {
 	Domain   string
 	Username string
 	Password string
+	// UseSPNEGO carries the NTLM exchange inside SPNEGO/Negotiate tokens, the way
+	// the Windows client does, instead of raw NTLM. The default raw-NTLM path
+	// works against standard Windows hosts; enable this for servers that require
+	// the Negotiate security package.
+	UseSPNEGO bool
 }
 
 // Authenticate runs the full CredSSP exchange over conn, which must already be
@@ -93,6 +101,10 @@ func Authenticate(conn *tls.Conn, creds Credentials) error {
 	pubKey, err := publicKeyBytes(state.PeerCertificates[0])
 	if err != nil {
 		return err
+	}
+
+	if creds.UseSPNEGO {
+		return authenticateSPNEGO(conn, creds, pubKey)
 	}
 
 	ctx := context.Background()
@@ -187,6 +199,145 @@ func Authenticate(conn *tls.Conn, creds Credentials) error {
 	return writeTSRequest(conn, &tsRequest{
 		Version:  credSSPVersion,
 		AuthInfo: sealedCreds,
+	})
+}
+
+// authenticateSPNEGO runs the CredSSP exchange with SPNEGO/Negotiate tokens via
+// go-msrpc's gssapi, instead of raw NTLM. pubKey is the server's RSA public key
+// (PKCS#1), which the public-key binding is computed over. The NTLM sub-mechanism
+// is sealed inside SPNEGO NegToken envelopes, which is what the Windows client
+// sends; Kerberos is not offered.
+func authenticateSPNEGO(conn *tls.Conn, creds Credentials, pubKey []byte) error {
+	ctx := context.Background()
+
+	ntlmCfg := ntlm.NewConfig()
+	ntlmCfg.Integrity = true
+	ntlmCfg.Confidentiality = true
+	// Set the credential on the NTLM config directly. We drive the mechanism
+	// through spnego.Authentifier rather than gssapi.InitSecurityContext, so the
+	// context's credential store is never resolved into the mechanism; without
+	// this the NTLM exchange runs anonymously (the server logs an ANONYMOUS LOGON
+	// and refuses the session).
+	ntlmCfg.Credential = credential.NewFromPassword(logonName(creds), creds.Password)
+
+	gctx := gssapi.NewSecurityContext(ctx,
+		gssapi.WithMechanismFactory(ssp.NTLM, ntlmCfg),
+	)
+	auth := &spnego.Authentifier{Config: &spnego.Config{
+		MechanismsList:          []gssapi.MechanismFactory{ssp.NTLM},
+		Capabilities:            gssapi.Integrity | gssapi.Confidentiality,
+		RequireMechanismListMIC: true,
+	}}
+
+	// Step 1: SPNEGO NegTokenInit (wraps the NTLM NEGOTIATE).
+	neg, err := auth.Negotiate(gctx)
+	if err != nil {
+		return fmt.Errorf("nla: spnego negotiate: %w", err)
+	}
+	if err := writeTSRequest(conn, &tsRequest{
+		Version:    credSSPVersion,
+		NegoTokens: []negoToken{{Token: neg}},
+	}); err != nil {
+		return err
+	}
+
+	// Step 2: server challenge -> client NegTokenResp (NTLM AUTHENTICATE + mechListMIC).
+	// Respond completes the SPNEGO exchange on our side: it resets the NTLM cipher
+	// and advances the outbound sequence number by one (for the mechListMIC it just
+	// signed). The server performs the matching reset when it receives this token.
+	resp, err := readTSRequest(conn)
+	if err != nil {
+		return err
+	}
+	if len(resp.NegoTokens) == 0 {
+		return fmt.Errorf("nla: server did not return a challenge")
+	}
+	authToken, err := auth.Respond(gctx, resp.NegoTokens[0].Token)
+	if err != nil {
+		return fmt.Errorf("nla: spnego respond: %w", err)
+	}
+
+	// Step 3: client -> server, the AUTHENTICATE token plus the sealed public key,
+	// bound to a fresh nonce. Windows expects these interleaved in one message.
+	nonce, err := randomBytes(32)
+	if err != nil {
+		return err
+	}
+	bound := bindingHash(clientServerHashMagic, nonce, pubKey)
+	sealed, err := auth.Mechanism.Wrap(gctx, &gssapi.MessageToken{Payload: bound, Capabilities: gssapi.Confidentiality})
+	if err != nil {
+		return fmt.Errorf("nla: spnego seal public key: %w", err)
+	}
+	if err := writeTSRequest(conn, &tsRequest{
+		Version:     credSSPVersion,
+		NegoTokens:  []negoToken{{Token: authToken}},
+		PubKeyAuth:  append(append([]byte{}, sealed.Signature...), sealed.Payload...),
+		ClientNonce: nonce,
+	}); err != nil {
+		return err
+	}
+
+	// Step 4: server -> client, its SPNEGO accept-complete (with mechListMIC) and
+	// its own sealed public key. Processing the accept-complete verifies the
+	// server's mechListMIC, which advances our inbound sequence number to match the
+	// server (it advanced its outbound sequence when it signed its own mechList)
+	// and re-derives the cipher. That re-derivation also rewinds the outbound
+	// cipher, discarding the keystream the public-key seal above consumed, so
+	// re-advance it by the same amount before sealing the credentials below.
+	resp, err = readTSRequest(conn)
+	if err != nil {
+		return err
+	}
+	if resp.ErrorCode != 0 {
+		return fmt.Errorf("nla: server reported error 0x%08x (%s)", uint32(resp.ErrorCode), ntStatus(uint32(resp.ErrorCode)))
+	}
+	if len(resp.NegoTokens) > 0 {
+		if _, err := auth.Respond(gctx, resp.NegoTokens[0].Token); err != nil {
+			return fmt.Errorf("nla: spnego finalize: %w", err)
+		}
+		if m, ok := auth.Mechanism.(*ntlm.Mechanism); ok {
+			// The seal consumed len(bound) bytes encrypting the payload plus 8 bytes
+			// for the signature checksum.
+			if err := m.ApplyOutboundCipher(gctx, make([]byte, len(bound)+8)); err != nil {
+				return fmt.Errorf("nla: realign cipher: %w", err)
+			}
+		}
+	}
+	if len(resp.PubKeyAuth) < 16 {
+		return fmt.Errorf("nla: server did not return a sealed public key (authentication likely failed)")
+	}
+	got, err := auth.Mechanism.Unwrap(gctx, &gssapi.MessageToken{
+		Signature:    resp.PubKeyAuth[:16],
+		Payload:      resp.PubKeyAuth[16:],
+		Capabilities: gssapi.Confidentiality,
+	})
+	if err != nil {
+		return fmt.Errorf("nla: spnego unseal server public key: %w", err)
+	}
+	want := bindingHash(serverClientHashMagic, nonce, pubKey)
+	if !bytesEqual(got.Payload, want) {
+		return fmt.Errorf("nla: server public key check failed (possible man-in-the-middle)")
+	}
+
+	// Step 5: client -> server, the delegated password.
+	creds2, err := asn1.Marshal(tsCredentials{
+		CredType: 1,
+		Credentials: mustMarshal(tsPasswordCreds{
+			DomainName: encodeUTF16(creds.Domain),
+			UserName:   encodeUTF16(creds.Username),
+			Password:   encodeUTF16(creds.Password),
+		}),
+	})
+	if err != nil {
+		return fmt.Errorf("nla: marshal credentials: %w", err)
+	}
+	sealedCreds, err := auth.Mechanism.Wrap(gctx, &gssapi.MessageToken{Payload: creds2, Capabilities: gssapi.Confidentiality})
+	if err != nil {
+		return fmt.Errorf("nla: spnego seal credentials: %w", err)
+	}
+	return writeTSRequest(conn, &tsRequest{
+		Version:  credSSPVersion,
+		AuthInfo: append(append([]byte{}, sealedCreds.Signature...), sealedCreds.Payload...),
 	})
 }
 
