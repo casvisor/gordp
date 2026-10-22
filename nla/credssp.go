@@ -112,6 +112,9 @@ func Authenticate(conn *tls.Conn, creds Credentials) error {
 	cfg := ntlm.NewConfig()
 	cfg.Integrity = true
 	cfg.Confidentiality = true
+	// Negotiate the VERSION field as mstsc does. FreeRDP-based servers omit it
+	// from the CHALLENGE otherwise, and go-msrpc cannot parse that layout.
+	cfg.Version = ntlm.DefaultVersion
 	cfg.Credential = credential.NewFromPassword(logonName(creds), creds.Password)
 	auth := &ntlm.Authentifier{Config: cfg}
 
@@ -213,6 +216,7 @@ func authenticateSPNEGO(conn *tls.Conn, creds Credentials, pubKey []byte) error 
 	ntlmCfg := ntlm.NewConfig()
 	ntlmCfg.Integrity = true
 	ntlmCfg.Confidentiality = true
+	ntlmCfg.Version = ntlm.DefaultVersion
 	// Set the credential on the NTLM config directly. We drive the mechanism
 	// through spnego.Authentifier rather than gssapi.InitSecurityContext, so the
 	// context's credential store is never resolved into the mechanism; without
